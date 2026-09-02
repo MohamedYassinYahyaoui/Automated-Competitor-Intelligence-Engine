@@ -43,8 +43,6 @@ def parse_book_html(html_content: str) -> list[dict]:
             continue
 
         title = title_tag.get("title")
-
-        # Extract numeric float from price string (e.g., "£51.77" -> 51.77)
         price_tag = book.select_one("p.price_color")
         price = None
         if price_tag:
@@ -81,6 +79,14 @@ if __name__ == "__main__":
         "https://books.toscrape.com/catalogue/category/books/science_22/index.html",
         "https://books.toscrape.com/catalogue/category/books/academic_40/index.html",
         "https://books.toscrape.com/catalogue/category/books/historical-fiction_4/index.html",
+        "https://books.toscrape.com/catalogue/category/books/travel_2/index.html",
+        "https://books.toscrape.com/catalogue/category/books/mystery_3/index.html",
+        "https://books.toscrape.com/catalogue/category/books/romance_8/index.html",
+        "https://books.toscrape.com/catalogue/category/books/travel_2/index.html",
+        "https://books.toscrape.com/catalogue/category/books/travel_2/index.html",
+        "https://books.toscrape.com/catalogue/category/books/travel_2/index.html",
+        "https://books.toscrape.com/catalogue/category/books/travel_2/index.html",
+        "https://books.toscrape.com/catalogue/category/books/travel_2/index.html"
     ]
 
     start = time.perf_counter()
