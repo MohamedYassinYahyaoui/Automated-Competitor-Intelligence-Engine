@@ -1,26 +1,50 @@
 import asyncio
-from scraper import fetch_all_urls, parse_book_html
-from analyzer import analyze_extracted_books, MarketAnalysis
+import logging
+from pydantic import ValidationError
 
-if __name__ == "__main__":
+from app import (
+    init_duckdb,
+    stream_batches,
+    bulk_save_to_duckdb,
+    generate_batch_market_report,
+    save_llm_report,
+    OpenLibraryBook,
+)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+async def run_pipeline():
+    init_duckdb()
+
     target_urls = [
-        "https://books.toscrape.com/catalogue/category/books/science_22/index.html",
-        "https://books.toscrape.com/catalogue/category/books/academic_40/index.html",
+        f"https://openlibrary.org/works/OL{i}W.json"
+        for i in range(10000, 10100)
     ]
 
-    print("Fetching raw HTML...")
-    html_pages = asyncio.run(fetch_all_urls(target_urls))
-    
-    print("Parsing HTML into structured records...")
-    raw_books = [book for html in html_pages for book in parse_book_html(html)]
-    
-    print(f"Sending {len(raw_books)} records to Gemini API for analysis...")
-    analysis_result: MarketAnalysis = analyze_extracted_books(raw_books)
-    
-    # Printed output is now a typed Pydantic object, not raw string text
-    print("\n--- GEMINI ANALYSIS RESULT ---")
-    print(f"Summary: {analysis_result.category_summary}\n")
-    print(f"Price Assessment: {analysis_result.price_assessment}\n")
-    print("Top Recommendations:")
-    for book in analysis_result.top_recommendations:
-        print(f" - {book.title} (Score: {book.estimated_value_score}/10): {book.target_audience}")
+    async for raw_batch in stream_batches(target_urls):
+        # 1. Convert raw dicts to validated Pydantic models
+        validated_batch: list[OpenLibraryBook] = []
+        for raw_item in raw_batch:
+            try:
+                validated_item = OpenLibraryBook.model_validate(raw_item)
+                validated_batch.append(validated_item)
+            except ValidationError as ve:
+                logging.warning(f"Skipping malformed item: {ve}")
+
+        if not validated_batch:
+            continue
+
+        # 2. Store Validated Raw Data in DuckDB
+        bulk_save_to_duckdb(validated_batch)
+
+        # 3. Synthesize Market Insights via LLM
+        report = await generate_batch_market_report(validated_batch)
+
+        # 4. Store LLM Market Report safely
+        if report is not None:
+            save_llm_report(report, len(validated_batch))
+        else:
+            logging.warning("Skipping report storage due to failed LLM synthesis.")
+
+if __name__ == "__main__":
+    asyncio.run(run_pipeline())
