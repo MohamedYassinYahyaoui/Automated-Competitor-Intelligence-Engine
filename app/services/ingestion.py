@@ -1,108 +1,91 @@
 import asyncio
 import logging
-import duckdb
-from curl_cffi import requests
-from app.core.config import settings
-from app.db.dlq import log_to_dlq
-from app.schemas.book import BookRecord
+from typing import Any, Dict, List, Optional
+from curl_cffi.requests import AsyncSession
+
+logger = logging.getLogger(__name__)
+
+# Standard browser context to pass Cloudflare fingerprint checks
+BROWSER_HEADERS = {
+    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "accept-language": "en-US,en;q=0.9",
+    "cache-control": "max-age=0",
+    "priority": "u=0, i",
+    "sec-ch-ua": '"Chromium";v="128", "Not;A=Brand";v="24", "Google Chrome";v="128"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "document",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-site": "none",
+    "sec-fetch-user": "?1",
+    "upgrade-insecure-requests": "1",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+}
 
 
-async def fetch_item(session: requests.AsyncSession, url: str) -> tuple[str, dict | None]:
-    """Fetches URL impersonating a real Chrome browser fingerprint."""
-    for attempt in range(settings.MAX_RETRIES):
-        try:
-            # impersonate="chrome" handles TLS signatures to bypass Cloudflare
-            response = await session.get(url, impersonate="chrome", allow_redirects=True, timeout=12)
-            if response.status_code == 200:
-                return url, response.json()
-            elif response.status_code in (403, 401):
-                logging.warning(f"[{response.status_code} BLOCKED] Anti-bot blocked request: {url}")
-                return url, None
-            elif response.status_code == 404:
-                logging.warning(f"[404 NOT FOUND] Target resource missing: {url}")
-                return url, None
-            elif response.status_code == 429:
-                await asyncio.sleep(2 ** attempt)
-        except Exception as exc:
-            logging.error(f"Fetch error for {url} on attempt {attempt + 1}: {exc}")
-            await asyncio.sleep(1)
-    return url, None
+async def fetch_target_payload(
+    url: str, 
+    fallback_urls: Optional[List[str]] = None, 
+    timeout: int = 20
+) -> Dict[str, Any]:
+    """
+    Fetches raw JSON payload using curl_cffi Chrome impersonation.
+    """
+    targets_to_try = [url] + (fallback_urls or [])
+    last_exception = None
 
+    async with AsyncSession(impersonate="chrome120") as session:
+        for target in targets_to_try:
+            try:
+                cleaned_url = target.rstrip("/")
+                request_headers = BROWSER_HEADERS.copy()
 
-async def fetch_and_process_batch(urls: list[str]) -> list[BookRecord]:
-    """Fetches store endpoints and extracts records with defensive dictionary parsing."""
-    valid_records: list[BookRecord] = []
+                response = await session.get(
+                    cleaned_url,
+                    headers=request_headers,
+                    allow_redirects=True,
+                    timeout=timeout
+                )
 
-    async with requests.AsyncSession() as session:
-        tasks = [fetch_item(session, url) for url in urls]
-        results = await asyncio.gather(*tasks)
+                if response.status_code == 200:
+                    try:
+                        return response.json()
+                    except Exception as json_err:
+                        raise ValueError(f"Invalid JSON payload returned from {cleaned_url}: {json_err}")
 
-    for url, raw_json in results:
-        if raw_json is None:
-            log_to_dlq(
-                source_url=url,
-                raw_payload={"status": "http_fetch_failed_or_blocked"},
-                error=ValueError("HTTP Fetch failed or anti-bot blocked request."),
-            )
-            continue
+                elif response.status_code in (403, 404):
+                    logger.warning(f"Endpoint HTTP {response.status_code} on {cleaned_url}. Attempting fallback route...")
+                    last_exception = Exception(f"[{response.status_code} HTTP STATUS] Anti-bot block or missing resource on {cleaned_url}.")
+                    continue
 
-        try:
-            # Shopify catalog endpoint returns a top-level "products" list
-            products = raw_json.get("products", []) if isinstance(raw_json, dict) else []
+                else:
+                    response.raise_for_status()
 
-            if not products:
-                log_to_dlq(source_url=url, raw_payload=raw_json, error=ValueError("Empty or missing 'products' array"))
+            except Exception as e:
+                last_exception = e
+                logger.warning(f"Fetch failed on {target}: {e}")
                 continue
 
-            for item in products:
-                try:
-                    # Defensive parsing without rigid Pydantic models
-                    key_val = str(item.get("id") or item.get("handle") or "unknown_key")
-                    title_val = str(item.get("title") or "Untitled Product").strip()
-                    
-                    # Extract vendor & category
-                    vendor_val = str(item.get("vendor") or "Unknown Vendor")
-                    category_val = str(item.get("product_type") or "General")
+    raise last_exception or Exception(f"Failed to fetch payload from {url}")
 
-                    # Extract pricing safely from the first variant
-                    price_val = 0.0
-                    variants = item.get("variants") or []
-                    if isinstance(variants, list) and len(variants) > 0:
-                        first_variant = variants[0]
-                        if isinstance(first_variant, dict) and "price" in first_variant:
-                            price_val = float(first_variant["price"])
 
-                    # Build validated BookRecord domain model
-                    record = BookRecord(
-                        key=key_val,
-                        title=title_val,
-                        description=f"Vendor: {vendor_val} | Category: {category_val}",
-                        price=price_val,
-                        vendor=vendor_val,
-                        category=category_val,
-                    )
-                    valid_records.append(record)
+async def ingest_single_target(target_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Worker function for single target execution."""
+    main_url = target_config["url"]
+    fallbacks = target_config.get("fallbacks", [])
+    return await fetch_target_payload(main_url, fallback_urls=fallbacks)
 
-                except Exception as item_err:
-                    log_to_dlq(source_url=url, raw_payload=item, error=item_err)
 
-        except Exception as batch_err:
-            log_to_dlq(source_url=url, raw_payload=raw_json, error=batch_err)
-
-    # Bulk store valid extracted records into DuckDB
-    if valid_records:
-        with duckdb.connect(settings.DB_PATH) as con:
-            records_data = [
-                (r.key, r.title, r.description, [getattr(r, "category", "General")])
-                for r in valid_records
-            ]
-            con.executemany(
-                """
-                INSERT OR REPLACE INTO raw_books (key, title, description, subjects)
-                VALUES (?, ?, ?, ?)
-            """,
-                records_data,
-            )
-        logging.info(f"Persisted {len(valid_records)} valid records into DuckDB.")
-
-    return valid_records
+async def fetch_and_process_batch(targets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Batch execution entrypoint required by package exports."""
+    tasks = [ingest_single_target(target) for target in targets]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    valid_payloads = []
+    for target, result in zip(targets, results):
+        if isinstance(result, Exception):
+            logger.warning(f"Batch fetch failed for {target.get('url')}: {result}")
+        elif result:
+            valid_payloads.append(result)
+            
+    return valid_payloads

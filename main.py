@@ -1,87 +1,138 @@
+import sys
 import asyncio
 import logging
-import sys
-from app.core.config import settings
-from app.db.connection import init_db
-from app.db.dlq import get_unhandled_dlq_count
-from app.services.analyzer import analyze_batch
-from app.services.ingestion import fetch_and_process_batch
+import duckdb
+from typing import List, Dict, Any
+from google import genai
+import os
+from dotenv import load_dotenv
 
-# Configure structured logging
+load_dotenv()  # Load environment variables from .env file
+
+# Required fix for curl_cffi on Windows platforms
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+from app.services.ingestion import ingest_single_target
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)],
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("orchestrator")
 
+TARGETS: List[Dict[str, Any]] = [
+    {
+        "name": "Gymshark",
+        "url": "https://www.gymshark.com/products.json?limit=10"
+    },
+    {
+        "name": "Allbirds",
+        "url": "https://www.allbirds.com/products.json?limit=10"
+    },
+    {
+        "name": "RedBull Shop",
+        "url": "https://www.redbullshop.com/en-int/products.json?limit=10",
+        "fallbacks": [
+            "https://www.redbullshop.com/products.json?limit=10"
+        ]
+    }
+]
 
-async def run_pipeline(target_urls: list[str]) -> None:
-    """Orchestrates end-to-end execution: Init DB -> Ingest & Trap Errors -> Synthesize -> Audit."""
-    logger.info(f"Starting {settings.APP_NAME} pipeline execution...")
-
-    # Step 1: Ensure database tables & migration states exist
-    init_db()
-
-    # Step 2: Concurrently fetch, validate, and store records (Routing failures to DLQ)
-    logger.info(f"Dispatching batch ingestion for {len(target_urls)} targets...")
-    valid_records = await fetch_and_process_batch(target_urls)
-    logger.info(
-        f"Ingestion complete. Valid records: {len(valid_records)}/{len(target_urls)}"
-    )
-
-    # Step 3: Run Gemini LLM Synthesis on valid datasets
-    if valid_records:
-        logger.info("Feeding ingested records to Gemini 2.5 Flash for analysis...")
-        report = analyze_batch(valid_records)
-        if report:
-            logger.info("--- SYNTHESIS REPORT SUMMARY ---")
-            logger.info(f"Category Summary: {report.category_summary}")
-            logger.info(f"Price Assessment: {report.price_assessment}")
-            logger.info(f"Takeaways: {', '.join(report.key_takeaways)}")
-    else:
-        logger.warning(
-            "Skipping Gemini synthesis step: Zero valid records passed validation."
+def init_database(db_path: str = "analytics.duckdb") -> duckdb.DuckDBPyConnection:
+    conn = duckdb.connect(db_path)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS product_catalog (
+            id VARCHAR,
+            title VARCHAR,
+            vendor VARCHAR,
+            product_type VARCHAR,
+            price DOUBLE,
+            ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-
-    # Step 4: Health check & Dead-Letter Queue quarantine count audit
-    unhandled_dlq = get_unhandled_dlq_count()
-    if unhandled_dlq > 0:
-        logger.warning(
-            f"[SYSTEM AUDIT] Pipeline completed with {unhandled_dlq} quarantined record(s) in DLQ."
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS dlq_quarantine (
+            target_url VARCHAR,
+            error_message VARCHAR,
+            quarantined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        logger.warning(
-            "Inspect quarantined items via '/api/v1/dlq' or execute 'scripts/replay_dlq.py'."
-        )
-    else:
-        logger.info("[SYSTEM AUDIT] Pipeline completed with 0 errors in DLQ.")
+    """)
+    return conn
 
-
-def main():
-    # Sample Target Dataset (Replace with live target lists/scraped index endpoints)
-    # Real commercial endpoints carrying live product, pricing, and variant data
-    # Real commercial endpoints carrying live product, pricing, and variant data
-    sample_targets = [
-        # Gymshark (Fitness/Apparel) - Live Shopify Catalog
-        "https://www.gymshark.com/products.json?limit=10",
-    
-        # Allbirds (Footwear/Apparel) - Live Shopify Catalog
-        "https://www.allbirds.com/products.json?limit=10",
-    
-        # Red Bull Shop (Merchandise/Beverages) - Live Shopify Catalog
-        "https://www.redbullshop.com/products.json?limit=10",
-    
-        # Intentionally malformed URL to verify DLQ trapping
-        "https://www.gymshark.com/invalid_endpoint_for_dlq_test.json"
-    ]
+def route_to_dlq(conn: duckdb.DuckDBPyConnection, url: str, error: str):
     try:
-        asyncio.run(run_pipeline(sample_targets))
-    except KeyboardInterrupt:
-        logger.info("Pipeline execution terminated by user.")
-    except Exception as fatal_err:
-        logger.critical(f"Fatal crash during pipeline execution: {fatal_err}")
-        sys.exit(1)
+        conn.execute(
+            "INSERT INTO dlq_quarantine (target_url, error_message) VALUES (?, ?)",
+            (url, str(error))
+        )
+    except Exception as db_err:
+        logger.error(f"Failed to record to DLQ: {db_err}")
+    logger.warning(f"[DLQ QUARANTINE] Payload from '{url}' routed to DLQ. Cause: {error}")
 
+async def run_pipeline():
+    logger.info("Starting Automated Competitor Intelligence Engine pipeline execution...")
+    
+    db_conn = init_database("analytics.duckdb")
+    logger.info("Database initialized successfully at 'analytics.duckdb'.")
+
+    valid_payloads: List[Dict[str, Any]] = []
+
+    logger.info(f"Dispatching batch ingestion for {len(TARGETS)} targets...")
+    for target in TARGETS:
+        url = target.get("url")
+        try:
+            payload = await ingest_single_target(target)
+            
+            # Extract products list safely
+            products = []
+            if isinstance(payload, dict):
+                products = payload.get("products", [])
+            elif isinstance(payload, list):
+                products = payload
+
+            if products:
+                valid_payloads.append(payload)
+                for p in products:
+                    variants = p.get("variants", [])
+                    price = float(variants[0]["price"]) if variants and "price" in variants[0] else 0.0
+                    db_conn.execute(
+                        "INSERT INTO product_catalog (id, title, vendor, product_type, price) VALUES (?, ?, ?, ?, ?)",
+                        (str(p.get("id")), str(p.get("title")), str(p.get("vendor")), str(p.get("product_type")), price)
+                    )
+                logger.info(f"Successfully ingested {len(products)} products from {target['name']}")
+            else:
+                logger.warning(f"Target returned empty product set: {url}")
+                route_to_dlq(db_conn, url, "Empty product array returned")
+
+        except Exception as e:
+            logger.error(f"Target ingestion failed for {url}: {e}", exc_info=True)
+            route_to_dlq(db_conn, url, str(e))
+
+    record_count = db_conn.execute("SELECT COUNT(*) FROM product_catalog").fetchone()[0]
+    logger.info(f"Persisted total valid records in DuckDB: {record_count}")
+    logger.info(f"Ingestion complete. Valid records ingested this run: {len(valid_payloads)}")
+
+    # Synthesis via Gemini 2.5 Flash
+    if valid_payloads:
+        logger.info("Feeding ingested records to Gemini 2.5 Flash for analysis...")
+        client = genai.Client()
+        chat = client.chats.create(model="gemini-2.5-flash")
+        
+        synthesis_prompt = (
+            "Analyze the following ingested competitor raw JSON catalog data. "
+            "Produce a structured intelligence briefing detailing product distribution, "
+            "pricing anomalies, vendor breakdown, and strategic insights:\n\n"
+            f"{valid_payloads}"
+        )
+        
+        response = chat.send_message(synthesis_prompt)
+        logger.info("--- SYNTHESIS REPORT SUMMARY ---")
+        print("\n" + response.text + "\n")
+    else:
+        logger.error("No valid payloads ingested. Skipping synthesis step.")
+
+    db_conn.close()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(run_pipeline())
