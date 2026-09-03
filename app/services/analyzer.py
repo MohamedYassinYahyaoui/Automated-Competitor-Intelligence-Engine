@@ -1,52 +1,78 @@
+import os
+import json
 import logging
+from datetime import datetime
+from typing import Any, Dict, List
 from google import genai
 from google.genai import types
-import duckdb
-from app.core.config import settings
-from app.schemas.book import BookRecord
 
+logger = logging.getLogger(__name__)
 
-def analyze_batch(records: list[BookRecord]) -> str:
-    """Passes ingested product records to Gemini 2.5 Flash for market intelligence extraction."""
-    
-    # Filter out zero-priced placeholder items (e.g. Free Returns Coverage)
-    valid_priced_records = [r for r in records if r.price > 0.0]
-    
-    if not valid_priced_records:
-        logging.warning("[ANALYZER GUARDRAIL] Aborting synthesis: 0 records contain non-zero pricing data.")
-        return "Synthesis skipped: No valid non-zero pricing data found in ingested batch."
+SYSTEM_INSTRUCTION = """
+You are a senior e-commerce intelligence analyst specializing in competitor benchmarking and dynamic pricing strategy.
+Your task is to analyze pruned multi-brand product catalogs and generate a executive intelligence brief.
 
-    # Construct clean payload for Gemini context
-    context_payload = [
-        {
-            "product_id": r.key,
-            "product_title": r.title,
-            "price_usd": f"${r.price:.2f}",
-            "vendor": r.vendor,
-            "category": r.category,
-        }
-        for r in valid_priced_records
-    ]
+Your output must be structured, objective, and focus heavily on actionable insights:
+1. Pricing Landscape: Compare min/max/average price bands across tracked targets. Highlight anomalies or aggressive positioning.
+2. Assortment & Catalog Breadth: Analyze total catalog size, dominant categories, and variant density.
+3. Inventory & Availability: Identify out-of-stock trends or stock concentration risks.
+4. Strategic Opportunities: Provide 3 concrete recommendations for competing against these brands.
 
-    prompt = f"""
-    You are a competitive intelligence analyst. Analyze the following e-commerce product batch:
+Do not fabricate data. Strictly base your analysis on the provided structured payload.
+"""
 
-    {context_payload}
-
-    Provide a concise synthesis covering:
-    1. Category Summary: Primary product categories and vendor concentration.
-    2. Price Assessment: Specific price ranges, median price points, and premium vs budget positioning.
-    3. Strategic Takeaways: Key market opportunities or pricing anomalies.
+async def generate_intelligence_report(
+    pruned_payload: List[Dict[str, Any]],
+    model_name: str = "gemini-2.5-flash"
+) -> str:
     """
+    Asynchronously passes the pruned catalog payload to Gemini 2.5 Flash
+    to synthesize strategic competitor intelligence.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        logger.error("GEMINI_API_KEY environment variable is missing.")
+        raise ValueError("GEMINI_API_KEY environment variable is required to run analyzer.py.")
 
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
-    response = client.models.generate_content(
-        model=settings.GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.2,
-            max_output_tokens=1000,
-        ),
-    )
+    # Initialize the modern unified GenAI client
+    client = genai.Client(api_key=api_key)
 
-    return response.text
+    # Convert pruned dataset into clean JSON string context
+    context_str = json.dumps(pruned_payload, indent=2)
+    
+    # Generate the dynamic execution date
+    current_date = datetime.now().strftime("%B %d, %Y")
+
+    # Construct the user prompt with the requested format
+    user_prompt = f"""
+Execution Date: {current_date}
+Analyze the following pruned competitor catalog data...
+{context_str}
+"""
+
+    try:
+        logger.info(f"Dispatching payload context ({len(context_str)} chars) to model '{model_name}'...")
+
+        # Execute async call using client.aio
+        response = await client.aio.models.generate_content(
+            model=model_name,
+            contents=user_prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=0.2,  # Low temperature for strict factual grounding
+                top_p=0.95,
+                # Suppress the AFC warning safely
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+            )
+        )
+
+        if not response.text:
+            logger.warning("Gemini API returned an empty text response.")
+            return "Analysis generation failed: Empty response received from model."
+
+        logger.info("Successfully generated competitive analysis brief.")
+        return response.text
+
+    except Exception as e:
+        logger.error(f"Error invoking Gemini API in analyzer.py: {e}")
+        raise RuntimeError(f"Gemini API invocation failed: {e}")
