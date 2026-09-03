@@ -4,16 +4,55 @@ from typing import Any, Dict, List
 import duckdb
 from app.schemas import MarketReportSchema, OpenLibraryBook
 
+DB_FILE = "analytics.duckdb"
+
+
+def init_dlq_table(db_path: str = DB_FILE) -> None:
+    """Creates the quarantine table for unprocessable or malformed records."""
+    with duckdb.connect(db_path) as con:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dead_letter_queue (
+                id VARCHAR DEFAULT uuid(),
+                failed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                source_url VARCHAR,
+                raw_payload JSON,
+                error_type VARCHAR,
+                error_message VARCHAR,
+                replayed BOOLEAN DEFAULT FALSE
+            )
+        """
+        )
+
+
+def log_to_dlq(
+    source_url: str,
+    raw_payload: dict,
+    error: Exception,
+    db_path: str = DB_FILE,
+) -> None:
+    """Persists a failed payload and its trace into the DLQ quarantine table."""
+    with duckdb.connect(db_path) as con:
+        con.execute(
+            """
+            INSERT INTO dead_letter_queue (source_url, raw_payload, error_type, error_message)
+            VALUES (?, ?, ?, ?)
+        """,
+            [
+                source_url,
+                json.dumps(raw_payload),
+                type(error).__name__,
+                str(error),
+            ],
+        )
+    logging.warning(
+        f"[DLQ QUARANTINE] Payload from {source_url} routed to DLQ. Error: {type(error).__name__}"
+    )
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-DB_FILE = "analytics.duckdb"
-
-
-# ---------------------------------------------------------------------------
 # INITIALIZATION & MIGRATIONS
-# ---------------------------------------------------------------------------
 def init_duckdb(db_path: str = DB_FILE) -> None:
     """Initializes the DuckDB database tables if they do not exist."""
     with duckdb.connect(db_path) as con:
