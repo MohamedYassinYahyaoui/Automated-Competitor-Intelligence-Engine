@@ -1,16 +1,17 @@
-"""App Package: Automated Market & Competitor Analysis Pipeline."""
+"""Automated Competitor Intelligence Engine Package."""
 
-from app.services.analyzer import generate_batch_market_report
-from app.db.connection import bulk_save_to_duckdb, init_duckdb, save_llm_report
-from app.services.ingestion import stream_batches
-from app.schemas import MarketReportSchema, OpenLibraryBook
+__version__ = "0.1.0"
+__author__ = "Yassin Yahyaoui"
+
+# Expose key entrypoints for clean top-level importing in main.py
+from app.core.config import settings
+from app.db.connection import init_db
+from app.services.analyzer import analyze_batch
+from app.services.ingestion import fetch_and_process_batch
 
 __all__ = [
-    "init_duckdb",
-    "bulk_save_to_duckdb",
-    "save_llm_report",
-    "OpenLibraryBook",
-    "MarketReportSchema",
-    "stream_batches",
-    "generate_batch_market_report",
+    "settings",
+    "init_db",
+    "fetch_and_process_batch",
+    "analyze_batch",
 ]

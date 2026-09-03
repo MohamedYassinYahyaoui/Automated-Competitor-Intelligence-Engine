@@ -1,81 +1,108 @@
 import asyncio
 import logging
-from typing import Any, AsyncGenerator, List, Optional
-import httpx
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
-# ---------------------------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------------------------
-CONCURRENCY_LIMIT = 10  # Max concurrent HTTP requests
-BATCH_SIZE = 50         # Items per batch to stream downstream
-MAX_CONNECTIONS = 20    # HTTP connection pool limit
-REQUEST_TIMEOUT = 10.0  # Timeout per request in seconds
-
-CLIENT_LIMITS = httpx.Limits(
-    max_keepalive_connections=CONCURRENCY_LIMIT,
-    max_connections=MAX_CONNECTIONS,
-)
+import duckdb
+from curl_cffi import requests
+from app.core.config import settings
+from app.db.dlq import log_to_dlq
+from app.schemas.book import BookRecord
 
 
-# ---------------------------------------------------------------------------
-# WORKER & STREAMING LOGIC
-# ---------------------------------------------------------------------------
-async def fetch_item(
-    client: httpx.AsyncClient,
-    semaphore: asyncio.Semaphore,
-    url: str,
-    retries: int = 3,
-) -> Optional[dict[str, Any]]:
-    """
-    Fetches a single JSON payload using a semaphore for concurrency control
-    and exponential backoff for transient failures.
-    """
-    async with semaphore:
-        for attempt in range(1, retries + 1):
-            try:
-                response = await client.get(url, timeout=REQUEST_TIMEOUT)
-                response.raise_for_status()
-                return response.json()
-            except (httpx.HTTPStatusError, httpx.RequestError) as err:
-                if attempt == retries:
-                    logging.error(f"[DROPPED] {url} | Exhausted retries | Error: {err}")
-                    return None
-                wait_time = 1.5 ** attempt
-                logging.warning(
-                    f"[RETRY {attempt}/{retries}] {url} failed: {err}. Retrying in {wait_time:.2f}s..."
-                )
-                await asyncio.sleep(wait_time)
-        return None
+async def fetch_item(session: requests.AsyncSession, url: str) -> tuple[str, dict | None]:
+    """Fetches URL impersonating a real Chrome browser fingerprint."""
+    for attempt in range(settings.MAX_RETRIES):
+        try:
+            # impersonate="chrome" handles TLS signatures to bypass Cloudflare
+            response = await session.get(url, impersonate="chrome", allow_redirects=True, timeout=12)
+            if response.status_code == 200:
+                return url, response.json()
+            elif response.status_code in (403, 401):
+                logging.warning(f"[{response.status_code} BLOCKED] Anti-bot blocked request: {url}")
+                return url, None
+            elif response.status_code == 404:
+                logging.warning(f"[404 NOT FOUND] Target resource missing: {url}")
+                return url, None
+            elif response.status_code == 429:
+                await asyncio.sleep(2 ** attempt)
+        except Exception as exc:
+            logging.error(f"Fetch error for {url} on attempt {attempt + 1}: {exc}")
+            await asyncio.sleep(1)
+    return url, None
 
 
-async def stream_batches(
-    urls: List[str], batch_size: int = BATCH_SIZE
-) -> AsyncGenerator[List[dict[str, Any]], None]:
-    """
-    Asynchronously fetches URLs in chunks and yields clean batches of raw JSON records.
-    Keeps memory footprint near zero during large ingestion runs.
-    """
-    semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
+async def fetch_and_process_batch(urls: list[str]) -> list[BookRecord]:
+    """Fetches store endpoints and extracts records with defensive dictionary parsing."""
+    valid_records: list[BookRecord] = []
 
-    async with httpx.AsyncClient(limits=CLIENT_LIMITS) as client:
-        for i in range(0, len(urls), batch_size):
-            chunk_urls = urls[i : i + batch_size]
-            logging.info(
-                f"Dispatching fetch tasks for chunk {i // batch_size + 1} ({len(chunk_urls)} URLs)..."
+    async with requests.AsyncSession() as session:
+        tasks = [fetch_item(session, url) for url in urls]
+        results = await asyncio.gather(*tasks)
+
+    for url, raw_json in results:
+        if raw_json is None:
+            log_to_dlq(
+                source_url=url,
+                raw_payload={"status": "http_fetch_failed_or_blocked"},
+                error=ValueError("HTTP Fetch failed or anti-bot blocked request."),
             )
+            continue
 
-            tasks = [fetch_item(client, semaphore, url) for url in chunk_urls]
-            results = await asyncio.gather(*tasks)
+        try:
+            # Shopify catalog endpoint returns a top-level "products" list
+            products = raw_json.get("products", []) if isinstance(raw_json, dict) else []
 
-            # Filter dropped/failed requests
-            valid_records = [res for res in results if res is not None]
+            if not products:
+                log_to_dlq(source_url=url, raw_payload=raw_json, error=ValueError("Empty or missing 'products' array"))
+                continue
 
-            if valid_records:
-                logging.info(f"Yielding batch of {len(valid_records)} valid records.")
-                yield valid_records
-            else:
-                logging.warning(f"Chunk starting at index {i} yielded zero valid records.")
+            for item in products:
+                try:
+                    # Defensive parsing without rigid Pydantic models
+                    key_val = str(item.get("id") or item.get("handle") or "unknown_key")
+                    title_val = str(item.get("title") or "Untitled Product").strip()
+                    
+                    # Extract vendor & category
+                    vendor_val = str(item.get("vendor") or "Unknown Vendor")
+                    category_val = str(item.get("product_type") or "General")
+
+                    # Extract pricing safely from the first variant
+                    price_val = 0.0
+                    variants = item.get("variants") or []
+                    if isinstance(variants, list) and len(variants) > 0:
+                        first_variant = variants[0]
+                        if isinstance(first_variant, dict) and "price" in first_variant:
+                            price_val = float(first_variant["price"])
+
+                    # Build validated BookRecord domain model
+                    record = BookRecord(
+                        key=key_val,
+                        title=title_val,
+                        description=f"Vendor: {vendor_val} | Category: {category_val}",
+                        price=price_val,
+                        vendor=vendor_val,
+                        category=category_val,
+                    )
+                    valid_records.append(record)
+
+                except Exception as item_err:
+                    log_to_dlq(source_url=url, raw_payload=item, error=item_err)
+
+        except Exception as batch_err:
+            log_to_dlq(source_url=url, raw_payload=raw_json, error=batch_err)
+
+    # Bulk store valid extracted records into DuckDB
+    if valid_records:
+        with duckdb.connect(settings.DB_PATH) as con:
+            records_data = [
+                (r.key, r.title, r.description, [getattr(r, "category", "General")])
+                for r in valid_records
+            ]
+            con.executemany(
+                """
+                INSERT OR REPLACE INTO raw_books (key, title, description, subjects)
+                VALUES (?, ?, ?, ?)
+            """,
+                records_data,
+            )
+        logging.info(f"Persisted {len(valid_records)} valid records into DuckDB.")
+
+    return valid_records

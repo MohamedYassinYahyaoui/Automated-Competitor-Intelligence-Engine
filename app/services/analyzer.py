@@ -1,87 +1,75 @@
 import json
 import logging
-from typing import List, Optional
+import duckdb
 from google import genai
 from google.genai import types
-from pydantic import ValidationError
-from dotenv import load_dotenv
-
-from app.schemas import MarketReportSchema, OpenLibraryBook
-
-load_dotenv()  # Load environment variables from .env file
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
-# Initialize Gemini Client (Expects GEMINI_API_KEY environment variable)
-ai_client = genai.Client()
+from app.core.config import settings
+from app.schemas.book import BookRecord
+from app.schemas.report import SynthesizedReport
 
 
-async def generate_batch_market_report(
-    batch: List[OpenLibraryBook],
-) -> Optional[MarketReportSchema]:
-    """
-    Synthesizes a batch of validated book records into a structured market analysis report using Gemini.
-    """
-    if not batch:
-        logging.warning("Empty batch passed to analyzer. Skipping LLM call.")
+def analyze_batch(records: list[BookRecord]) -> SynthesizedReport | None:
+    """Feeds valid ingested items into Gemini for structured competitive synthesis."""
+    if not records:
+        logging.warning("No valid records supplied for Gemini synthesis. Aborting.")
         return None
 
-    # 1. Build a lightweight payload to optimize token consumption and context window usage
-    condensed_payload = [
-        {
-            "key": book.key,
-            "title": book.title,
-            "subjects": book.subjects[:5],  # Limit subjects to top 5
-        }
-        for book in batch
+    context_payload = [
+        {"title": r.title, "description": r.description[:200], "subjects": r.subjects}
+        for r in records
     ]
 
     prompt = f"""
-    Analyze the following batch of {len(condensed_payload)} book listings and generate a structured market report.
+    You are a high-level competitive intelligence analyst.
+    Analyze the target product records and summarize key market insights.
     
-    Target Dataset:
-    {json.dumps(condensed_payload, indent=2)}
-    """
+    CRITICAL: You MUST respond strictly with a valid JSON object matching the requested schema. 
+    Do NOT include introductory conversational text, explanations, or markdown code blocks.
 
-    system_instruction = """
-    You are a senior publishing and competitor intelligence analyst. 
-    Analyze the provided raw batch of book listings and synthesize key insights.
-    Evaluate subject concentration, potential commercial value, market positioning, and critical takeaways.
-    You MUST adhere strictly to the JSON schema specified for the output.
+    Target Data Batch:
+    {json.dumps(context_payload, indent=2)}
     """
 
     try:
-        logging.info(
-            f"Dispatching LLM synthesis request for batch of {len(batch)} items..."
-        )
-
-        # 2. Call Gemini enforcing Pydantic Schema output
-        response = ai_client.models.generate_content(
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_schema=MarketReportSchema,
-                system_instruction=system_instruction,
-                temperature=0.2,  # Low temperature for factual, deterministic analysis
+                response_schema=SynthesizedReport,
+                temperature=0.1,
             ),
         )
 
-        # 3. Validate raw JSON response against Pydantic model
-        # Ensure response.text exists before parsing
-        if not response.text:
-            logging.error("LLM returned an empty response.")
-            return None
+        # Clean potential markdown wrappers if returned by model
+        raw_text = (response.text or "").strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text.removeprefix("```json").removesuffix("```").strip()
+        elif raw_text.startswith("```"):
+            raw_text = raw_text.removeprefix("```").removesuffix("```").strip()
 
-        report_data = MarketReportSchema.model_validate_json(response.text)
-        logging.info("Successfully synthesized and validated batch market report.")
-        return report_data
+        # Validate structured json output
+        structured_data = SynthesizedReport.model_validate_json(raw_text)
 
-    except ValidationError as ve:
-        logging.error(f"LLM output failed Pydantic schema validation: {ve}")
-        return None
+        # Persist report to DuckDB
+        with duckdb.connect(settings.DB_PATH) as con:
+            con.execute(
+                """
+                INSERT INTO market_reports (batch_size, category_summary, price_assessment, raw_json)
+                VALUES (?, ?, ?, ?)
+            """,
+                [
+                    len(records),
+                    structured_data.category_summary,
+                    structured_data.price_assessment,
+                    structured_data.model_dump_json(),
+                ],
+            )
+
+        logging.info("Successfully generated and stored market intelligence report.")
+        return structured_data
+
     except Exception as err:
-        logging.error(f"Failed to generate LLM market report: {err}")
+        logging.error(f"Failed to generate Gemini analysis: {err}")
         return None
