@@ -1,0 +1,40 @@
+name: Daily Competitor Intelligence Pipeline
+
+on:
+  # 1. Scheduled trigger: Runs daily at 06:00 AM UTC
+  schedule:
+    - cron: '0 6 * * *'
+  
+  # 2. Manual trigger: Allows you to run the workflow on demand from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  run-engine:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code from GitHub
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Create a dynamic .env file using GitHub Repository Secrets
+      - name: Inject Environment Variables
+        run: |
+          echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
+
+      # Step 3: Build the Docker image using docker-compose
+      - name: Build Docker Container
+        run: docker compose build
+
+      # Step 4: Run the pipeline
+      - name: Run Pipeline
+        run: docker compose up --abort-on-container-exit
+
+      # Step 5: Preserve the persistent analytics database as a downloadable artifact
+      - name: Upload DuckDB Analytical Database
+        uses: actions/upload-artifact@v4
+        if: always() # Uploads even if the pipeline encouters an error
+        with:
+          name: duckdb-analytics-snapshot
+          path: analytics.duckdb
+          retention-days: 7s
