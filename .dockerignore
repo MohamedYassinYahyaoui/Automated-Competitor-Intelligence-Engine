@@ -1,0 +1,19 @@
+# Python build artifacts & environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+myenv/
+venv/
+.venv/
+
+# Persistent local databases & keys
+*.duckdb
+.env
+
+# Git & IDE metadata
+.git/
+.gitignore
+.vscode/
+.idea/

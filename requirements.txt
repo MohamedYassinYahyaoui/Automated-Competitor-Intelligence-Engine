@@ -2,6 +2,7 @@
 curl_cffi>=0.7.0
 httpx>=0.27.0
 playwright>=1.48.0
+beautifulsoup4>=4.12.0
 
 # OLAP Storage & Data Processing
 duckdb>=1.1.0
@@ -12,4 +13,4 @@ google-genai>=0.1.0
 
 # Environment & Async Utilities
 python-dotenv>=1.0.1
-asyncio>=3.4.3s
+asyncio>=3.4.3

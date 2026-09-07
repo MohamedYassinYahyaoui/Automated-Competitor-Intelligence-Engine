@@ -1,0 +1,11 @@
+services:
+  competitor-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: competitor_engine_app
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    restart: "no"
