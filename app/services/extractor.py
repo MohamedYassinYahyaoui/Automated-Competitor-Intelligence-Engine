@@ -76,6 +76,9 @@ def extract_schema_json_ld(html_content: str) -> List[Dict[str, Any]]:
                     else:
                         vendor = str(brand) if brand else "Unknown Vendor"
 
+                    image = item.get("image")
+                    image_url = image[0] if isinstance(image, list) and image else image
+
                     products.append({
                         "product_id": str(item.get("sku") or item.get("productID") or f"html_parsed_{index}"),
                         "title": item.get("name", "Unknown Product"),
@@ -89,7 +92,7 @@ def extract_schema_json_ld(html_content: str) -> List[Dict[str, Any]]:
                         "price_max": price,
                         "total_variants": 1,
                         "available": "InStock" in str(offers.get("availability", "")),
-                        "image_url": item.get("image")[0] if isinstance(item.get("image"), list) else item.get("image"),
+                        "image_url": image_url,
                         "extraction_source": "html_schema_json_ld"
                     })
         except Exception as err:
