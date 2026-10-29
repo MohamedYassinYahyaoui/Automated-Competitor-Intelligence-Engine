@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, List
 import duckdb
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, FastAPI, HTTPException, Query
 from app.core.config import settings
 from app.db.connection import init_db
 
@@ -24,6 +24,44 @@ def health_check() -> Dict[str, str]:
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Database unreachable: {str(e)}"
+        )
+
+
+@router.get("/summary")
+def get_brand_pricing_summary() -> List[Dict[str, Any]]:
+    """Executes analytical DuckDB SQL aggregations across tracked competitor brands."""
+    try:
+        with get_db_connection() as con:
+            rows = con.execute(
+                """
+                SELECT
+                    target_name,
+                    COUNT(*) AS product_count,
+                    ROUND(AVG(price_min), 2) AS avg_price,
+                    ROUND(MIN(price_min), 2) AS min_price,
+                    ROUND(MAX(price_max), 2) AS max_price,
+                    ROUND(AVG(total_variants), 1) AS avg_variants,
+                    SUM(CASE WHEN NOT available THEN 1 ELSE 0 END) AS oos_count
+                FROM products
+                GROUP BY target_name
+                ORDER BY product_count DESC
+                """
+            ).fetchall()
+        return [
+            {
+                "target_name": r[0],
+                "product_count": r[1],
+                "avg_price": r[2],
+                "min_price": r[3],
+                "max_price": r[4],
+                "avg_variants": r[5],
+                "oos_count": r[6],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to compute OLAP summary: {str(e)}"
         )
 
 
@@ -101,3 +139,11 @@ def get_dead_letter_queue(
         raise HTTPException(
             status_code=500, detail=f"Failed to query DLQ: {str(e)}"
         )
+
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    description="Operational OLAP & DLQ inspection API for the Automated Competitor Intelligence Engine.",
+    version="1.0.0",
+)
+app.include_router(router)

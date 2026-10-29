@@ -1,6 +1,12 @@
 # Automated Competitor Intelligence Engine — Asynchronous ETL & OLAP Analytics Pipeline
 
-Asynchronous e-commerce ETL, anti-bot scraping, and competitive intelligence pipeline built with **Python (`asyncio.gather`)**, **`curl_cffi` (TLS/JA3 Impersonation)**, **Headless Playwright Chromium**, **DuckDB Columnar OLAP**, **Pydantic v2**, and **Google Gemini 2.5 Flash**. Engineered with automatic `HTTP 403` Cloudflare escalation, idempotent `ON CONFLICT(product_id) DO UPDATE` upserts, a **Dead-Letter Queue (DLQ) quarantine & replay CLI (`scripts/replay_dlq.py`)**, and a **token-pruning transformation layer** that cuts LLM context bloat by **>60%**.
+[![Loom Video Walkthrough](https://img.shields.io/badge/Loom-Video_Walkthrough-5542f6?style=for-the-badge&logo=loom&logoColor=white)](https://www.loom.com/share/bb6d64ce11834316989040e831c22e84)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![DuckDB](https://img.shields.io/badge/OLAP-DuckDB-FFF000?logo=duckdb&logoColor=black)](https://duckdb.org/)
+[![Pydantic v2](https://img.shields.io/badge/validation-Pydantic_v2-e92063?logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
+[![Tests Passing](https://img.shields.io/badge/tests-7%20passed-brightgreen.svg)]()
+
+Asynchronous e-commerce ETL, anti-bot scraping, and competitive intelligence pipeline built with **Python (`asyncio.gather`)**, **`curl_cffi` (TLS/JA3 Impersonation)**, **Headless Playwright Chromium**, **DuckDB Columnar OLAP**, **Pydantic v2**, and **Google Gemini 2.5 Flash**. Engineered with automatic `HTTP 403` Cloudflare escalation, idempotent `ON CONFLICT(product_id) DO UPDATE` upserts, a **Dead-Letter Queue (DLQ) quarantine & replay CLI (`scripts/replay_dlq.py`)**, and a **token-pruning transformation layer** that cuts LLM context bloat by **>90%** (183,972 chars → 13,636 chars, 92.6% reduction).
 
 ---
 

@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 import duckdb
 from pydantic import ValidationError
 from app.db.dlq import ensure_dlq_table, log_to_dlq
-from app.schemas.book import ProductRecord
+from app.schemas.product import ProductRecord
 
 logger = logging.getLogger(__name__)
 

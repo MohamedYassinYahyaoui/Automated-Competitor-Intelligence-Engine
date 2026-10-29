@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 import duckdb
 from app.core.config import settings
 from app.db.dlq import ensure_dlq_table, log_to_dlq
-from app.schemas.book import ProductRecord
+from app.schemas.product import ProductRecord
 from app.services.transform import init_duckdb_schema
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

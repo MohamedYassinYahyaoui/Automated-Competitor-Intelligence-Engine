@@ -1,7 +1,10 @@
 import asyncio
 import json
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import duckdb
 import pytest
@@ -151,9 +154,11 @@ def test_pydantic_v2_validation_and_idempotent_duckdb_upsert(tmp_path: Path):
     assert stats2 == {"upserted": 1, "quarantined": 0}
 
     with duckdb.connect(db_file, read_only=True) as con:
-        count, p_min, avail = con.execute(
+        result = con.execute(
             "SELECT COUNT(*), MIN(price_min), MIN(available) FROM products WHERE product_id = 'ab-100'"
         ).fetchone()
+        assert result is not None
+        count, p_min, avail = result
         assert count == 1
         assert p_min == 108.0
         assert avail is False
@@ -242,6 +247,34 @@ def test_fastapi_operational_router_endpoints(tmp_path: Path, monkeypatch):
 
     health = api_router.health_check()
     assert health["status"] == "healthy"
+
+    persist_products_to_duckdb(
+        [
+            {
+                "target": "Allbirds",
+                "products": [
+                    {
+                        "product_id": "ab-900",
+                        "title": "Wool Runner",
+                        "handle": "wool-runner",
+                        "vendor": "Allbirds",
+                        "product_type": "Shoes",
+                        "price_min": 110.0,
+                        "price_max": 120.0,
+                        "total_variants": 5,
+                        "available": True,
+                        "tags": ["merino"],
+                        "extraction_source": "shopify_json",
+                    }
+                ],
+            }
+        ],
+        db_path=db_file,
+    )
+    summary = api_router.get_brand_pricing_summary()
+    assert len(summary) == 1
+    assert summary[0]["target_name"] == "Allbirds"
+    assert summary[0]["avg_price"] == 110.0
 
     dlq_rows = api_router.get_dead_letter_queue(replayed=False, limit=10)
     assert len(dlq_rows) == 2

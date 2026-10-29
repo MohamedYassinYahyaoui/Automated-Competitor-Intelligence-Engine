@@ -1,11 +1,3 @@
-from app.schemas.book import BookRecord, RawBookPayload
-from app.schemas.dlq import DLQItem
-from app.schemas.report import MarketReportResponse, SynthesizedReport
+from app.schemas.product import ProductRecord
 
-__all__ = [
-    "BookRecord",
-    "RawBookPayload",
-    "SynthesizedReport",
-    "MarketReportResponse",
-    "DLQItem",
-]
+__all__ = ["ProductRecord"]
