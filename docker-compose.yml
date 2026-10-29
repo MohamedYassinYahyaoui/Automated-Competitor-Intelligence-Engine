@@ -5,7 +5,10 @@ services:
       dockerfile: Dockerfile
     container_name: competitor_engine_app
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - ./:/app
     restart: "no"

@@ -4,8 +4,8 @@ on:
   # 1. Scheduled trigger: Runs daily at 06:00 AM UTC
   schedule:
     - cron: '0 6 * * *'
-  
-  # 2. Manual trigger: Allows you to run the workflow on demand from the Actions tab
+
+  # 2. Manual trigger: Allows running the workflow on demand from the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -26,15 +26,19 @@ jobs:
       - name: Build Docker Container
         run: docker compose build
 
-      # Step 4: Run the pipeline
+      # Step 4: Run Automated Unit Tests inside Container
+      - name: Run Pytest Verification Suite
+        run: docker compose run --rm competitor-engine pytest tests/ -v
+
+      # Step 5: Run the ETL & Synthesis Pipeline
       - name: Run Pipeline
         run: docker compose up --abort-on-container-exit
 
-      # Step 5: Preserve the persistent analytics database as a downloadable artifact
+      # Step 6: Preserve the persistent analytics database as a downloadable artifact
       - name: Upload DuckDB Analytical Database
         uses: actions/upload-artifact@v4
-        if: always() # Uploads even if the pipeline encouters an error
+        if: always()
         with:
           name: duckdb-analytics-snapshot
           path: analytics.duckdb
-          retention-days: 7s
+          retention-days: 7
