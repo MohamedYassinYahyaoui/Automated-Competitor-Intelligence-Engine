@@ -183,23 +183,23 @@ Allbirds           |       20 |    105.54 |      0.80 |    160.00 |         12.1
 #### Actual Terminal Output
 
 ```text
-2026-10-27 20:23:41,788 [INFO] DuckDB analytical & DLQ schemas verified.
-2026-10-27 20:23:41,846 [WARNING] [DLQ QUARANTINE] Target='Gymshark US' (https://us.shop.gymshark.com/products.json?limit=10) routed to DLQ (id=7ef96dd7). Cause: ValueError: ValidationError: title must not be empty; price_max (38.0) < price_min (46.0)
-2026-10-27 20:23:41,887 [WARNING] [DLQ QUARANTINE] Target='Allbirds' (https://www.allbirds.com/legacy-v1-catalog.json) routed to DLQ (id=60587298). Cause: RuntimeError: [404 HTTP STATUS] Missing resource on https://www.allbirds.com/legacy-v1-catalog.json
-2026-10-27 20:23:41,887 [INFO] Connecting to DuckDB DLQ table in 'analytics.duckdb'...
-2026-10-27 20:23:41,909 [INFO] DuckDB analytical & DLQ schemas verified.
-2026-10-27 20:23:41,917 [INFO] Found 2 unhandled item(s) in Dead-Letter Queue:
+2026-10-30 14:24:04,114 [INFO] DuckDB analytical & DLQ schemas verified.
+2026-10-30 14:24:04,147 [WARNING] [DLQ QUARANTINE] Target='Gymshark US' (https://us.shop.gymshark.com/products.json?limit=10) routed to DLQ (id=fe3a88f8). Cause: ValueError: ValidationError: title must not be empty; price_max (38.0) < price_min (46.0)
+2026-10-30 14:24:04,198 [WARNING] [DLQ QUARANTINE] Target='Allbirds' (https://www.allbirds.com/legacy-v1-catalog.json) routed to DLQ (id=619d538c). Cause: RuntimeError: [404 HTTP STATUS] Missing resource on https://www.allbirds.com/legacy-v1-catalog.json
+2026-10-30 14:24:04,199 [INFO] Connecting to DuckDB DLQ table in 'analytics.duckdb'...
+2026-10-30 14:24:04,221 [INFO] DuckDB analytical & DLQ schemas verified.
+2026-10-30 14:24:04,223 [INFO] Found 2 unhandled item(s) in Dead-Letter Queue:
 
-2026-10-27 20:23:41,917 [INFO] --- DLQ ID: 60587298 | Target: Allbirds ---
-2026-10-27 20:23:41,917 [INFO] Source URL: https://www.allbirds.com/legacy-v1-catalog.json
-2026-10-27 20:23:41,917 [INFO] Error Type: RuntimeError | Message: [404 HTTP STATUS] Missing resource on https://www.allbirds.com/legacy-v1-catalog.json
-2026-10-27 20:23:41,917 [WARNING] --> Skipping non-recoverable HTTP 404 / transport failure (use --purge-404 to clean).
-2026-10-27 20:23:41,917 [INFO] --- DLQ ID: 7ef96dd7 | Target: Gymshark US ---
-2026-10-27 20:23:41,917 [INFO] Source URL: https://us.shop.gymshark.com/products.json?limit=10
-2026-10-27 20:23:41,917 [INFO] Error Type: ValueError | Message: ValidationError: title must not be empty; price_max (38.0) < price_min (46.0)
-2026-10-27 20:23:41,945 [INFO] --> SUCCESS: Remediated & upserted product 'gs-apex-seamless-9910' ('Apex Seamless T Shirt Black', $38.00-$46.00) into DuckDB 'products'.
-2026-10-27 20:23:41,949 [INFO] Marked 1 record(s) as replayed=TRUE in dead_letter_queue.
-2026-10-27 20:23:41,998 [INFO] Purged 1 non-recoverable HTTP 404 record(s) from DLQ.
+2026-10-30 14:24:04,223 [INFO] --- DLQ ID: 619d538c | Target: Allbirds ---
+2026-10-30 14:24:04,223 [INFO] Source URL: https://www.allbirds.com/legacy-v1-catalog.json
+2026-10-30 14:24:04,223 [INFO] Error Type: RuntimeError | Message: [404 HTTP STATUS] Missing resource on https://www.allbirds.com/legacy-v1-catalog.json
+2026-10-30 14:24:04,223 [WARNING] --> Skipping non-recoverable HTTP 404 / transport failure (use --purge-404 to clean).
+2026-10-30 14:24:04,223 [INFO] --- DLQ ID: fe3a88f8 | Target: Gymshark US ---
+2026-10-30 14:24:04,223 [INFO] Source URL: https://us.shop.gymshark.com/products.json?limit=10
+2026-10-30 14:24:04,223 [INFO] Error Type: ValueError | Message: ValidationError: title must not be empty; price_max (38.0) < price_min (46.0)
+2026-10-30 14:24:04,240 [INFO] --> SUCCESS: Remediated & upserted product 'gs-apex-seamless-9910' ('Apex Seamless T Shirt Black', $38.00-$46.00) into DuckDB 'products'.
+2026-10-30 14:24:04,244 [INFO] Marked 1 record(s) as replayed=TRUE in dead_letter_queue.
+2026-10-30 14:24:04,288 [INFO] Purged 1 non-recoverable HTTP 404 record(s) from DLQ.
 ```
 
 ---
