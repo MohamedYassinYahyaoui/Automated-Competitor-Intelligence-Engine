@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-30T13:09:38+00:00",
+  "generated_at": "2026-10-30T16:10:33+00:00",
   "machine": {
     "os": "Windows-11-10.0.26200-SP0",
     "python": "3.13.15",
@@ -16,69 +16,69 @@
     "sequential_playwright": {
       "runs": [
         {
-          "seconds": 9.306,
-          "peak_rss_mb": 392.5,
-          "peak_rss_delta_mb": 347.8
+          "seconds": 8.451,
+          "peak_rss_mb": 389.5,
+          "peak_rss_delta_mb": 345.1
         },
         {
-          "seconds": 5.947,
-          "peak_rss_mb": 392.3,
-          "peak_rss_delta_mb": 342.6
+          "seconds": 5.926,
+          "peak_rss_mb": 394.0,
+          "peak_rss_delta_mb": 344.2
         },
         {
-          "seconds": 6.011,
-          "peak_rss_mb": 393.3,
-          "peak_rss_delta_mb": 342.4
+          "seconds": 5.819,
+          "peak_rss_mb": 392.7,
+          "peak_rss_delta_mb": 341.7
         },
         {
-          "seconds": 6.647,
-          "peak_rss_mb": 394.9,
-          "peak_rss_delta_mb": 343.7
+          "seconds": 6.291,
+          "peak_rss_mb": 396.1,
+          "peak_rss_delta_mb": 344.9
         },
         {
-          "seconds": 6.362,
-          "peak_rss_mb": 394.8,
-          "peak_rss_delta_mb": 343.1
+          "seconds": 5.638,
+          "peak_rss_mb": 397.7,
+          "peak_rss_delta_mb": 346.1
         }
       ],
       "summary": {
-        "median_seconds": 6.362,
-        "max_seconds": 9.306,
-        "median_peak_rss_delta_mb": 343.1,
-        "max_peak_rss_delta_mb": 347.8
+        "median_seconds": 5.926,
+        "max_seconds": 8.451,
+        "median_peak_rss_delta_mb": 344.9,
+        "max_peak_rss_delta_mb": 346.1
       }
     },
     "sequential_curl_cffi": {
       "runs": [
         {
-          "seconds": 0.941,
-          "peak_rss_mb": 53.0,
+          "seconds": 0.936,
+          "peak_rss_mb": 53.1,
+          "peak_rss_delta_mb": 0.9
+        },
+        {
+          "seconds": 0.947,
+          "peak_rss_mb": 53.2,
           "peak_rss_delta_mb": 0.7
         },
         {
-          "seconds": 0.882,
-          "peak_rss_mb": 53.2,
-          "peak_rss_delta_mb": 0.9
-        },
-        {
-          "seconds": 0.959,
-          "peak_rss_mb": 53.2,
-          "peak_rss_delta_mb": 0.9
-        },
-        {
-          "seconds": 0.907,
-          "peak_rss_mb": 53.2,
+          "seconds": 1.038,
+          "peak_rss_mb": 53.3,
           "peak_rss_delta_mb": 0.8
         },
         {
-          "seconds": 0.97,
-          "peak_rss_mb": 53.2,
-          "peak_rss_delta_mb": 0.7
+          "seconds": 0.956,
+          "peak_rss_mb": 53.3,
+          "peak_rss_delta_mb": 0.8
+        },
+        {
+          "seconds": 1.011,
+          "peak_rss_mb": 53.3,
+          "peak_rss_delta_mb": 0.9
         }
       ],
       "summary": {
-        "median_seconds": 0.941,
-        "max_seconds": 0.97,
+        "median_seconds": 0.956,
+        "max_seconds": 1.038,
         "median_peak_rss_delta_mb": 0.8,
         "max_peak_rss_delta_mb": 0.9
       }
@@ -86,38 +86,38 @@
     "concurrent_two_tier": {
       "runs": [
         {
-          "seconds": 0.324,
-          "peak_rss_mb": 55.0,
-          "peak_rss_delta_mb": 2.5
-        },
-        {
-          "seconds": 0.403,
-          "peak_rss_mb": 55.2,
-          "peak_rss_delta_mb": 2.5
-        },
-        {
-          "seconds": 0.294,
+          "seconds": 0.415,
           "peak_rss_mb": 55.5,
-          "peak_rss_delta_mb": 2.8
+          "peak_rss_delta_mb": 2.9
         },
         {
-          "seconds": 0.527,
-          "peak_rss_mb": 55.2,
-          "peak_rss_delta_mb": 2.5
+          "seconds": 0.533,
+          "peak_rss_mb": 55.6,
+          "peak_rss_delta_mb": 2.7
         },
         {
-          "seconds": 0.424,
-          "peak_rss_mb": 55.9,
-          "peak_rss_delta_mb": 3.2
+          "seconds": 0.517,
+          "peak_rss_mb": 55.5,
+          "peak_rss_delta_mb": 2.6
+        },
+        {
+          "seconds": 0.502,
+          "peak_rss_mb": 55.5,
+          "peak_rss_delta_mb": 2.4
+        },
+        {
+          "seconds": 0.549,
+          "peak_rss_mb": 55.8,
+          "peak_rss_delta_mb": 2.9
         }
       ],
       "summary": {
-        "median_seconds": 0.403,
-        "max_seconds": 0.527,
-        "median_peak_rss_delta_mb": 2.5,
-        "max_peak_rss_delta_mb": 3.2
+        "median_seconds": 0.517,
+        "max_seconds": 0.549,
+        "median_peak_rss_delta_mb": 2.7,
+        "max_peak_rss_delta_mb": 2.9
       }
     }
   },
-  "speedup_vs_playwright": 15.8
+  "speedup_vs_playwright": 11.5
 }
