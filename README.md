@@ -6,7 +6,7 @@
 [![Pydantic v2](https://img.shields.io/badge/validation-Pydantic_v2-e92063?logo=pydantic&logoColor=white)](https://docs.pydantic.dev/)
 [![Tests Passing](https://img.shields.io/badge/tests-7%20passed-brightgreen.svg)]()
 
-Asynchronous e-commerce ETL, anti-bot scraping, and competitive intelligence pipeline built with **Python (`asyncio.gather`)**, **`curl_cffi` (TLS/JA3 Impersonation)**, **Headless Playwright Chromium**, **DuckDB Columnar OLAP**, **Pydantic v2**, and **Google Gemini 2.5 Flash**. Engineered with automatic `HTTP 403` Cloudflare escalation, idempotent `ON CONFLICT(product_id) DO UPDATE` upserts, a **Dead-Letter Queue (DLQ) quarantine & replay CLI (`scripts/replay_dlq.py`)**, and a **token-pruning transformation layer** that cuts LLM context bloat by **>90%** (183,972 chars → 13,636 chars, 92.6% reduction).
+Asynchronous e-commerce ETL, anti-bot scraping, and competitive intelligence pipeline built with **Python (`asyncio.gather`)**, **`curl_cffi` (TLS/JA3 Impersonation)**, **Headless Playwright Chromium**, **DuckDB Columnar OLAP**, **Pydantic v2**, and **Google Gemini 2.5 Flash**. Engineered with automatic `HTTP 403` Cloudflare escalation, idempotent `ON CONFLICT(product_id) DO UPDATE` upserts, a **Dead-Letter Queue (DLQ) quarantine & replay CLI (`scripts/replay_dlq.py`)**, and a **token-pruning transformation layer** that cuts LLM context bloat by **>90%** (184,185 chars → 13,635 chars, 92.6% reduction).
 
 ---
 
@@ -150,7 +150,7 @@ The raw size is the JSON-serialized storefront payload exactly as fetched; the p
 Target Brand       | Products |   Avg ($) |   Min ($) |   Max ($) | Avg Variants |   OOS
 --------------------------------------------------------------------------------------
 Red Bull Shop      |       50 |     67.10 |      5.69 |    489.95 |          1.5 |     6
-Gymshark US        |       49 |     44.33 |     20.00 |     70.00 |          6.1 |     6
+Gymshark US        |       49 |     44.33 |     20.00 |     70.00 |          6.1 |     5
 Allbirds           |       20 |    105.54 |      0.80 |    160.00 |         12.1 |     2
 --------------------------------------------------------------------------------------
 ```
@@ -239,14 +239,14 @@ pytest tests/test_pipeline.py -v
 ```
 
 ```text
-tests/test_pipeline.py::test_extract_shopify_json_fast_path PASSED
-tests/test_pipeline.py::test_extract_schema_json_ld_html_fallback PASSED
-tests/test_pipeline.py::test_ingestion_escalates_to_playwright_on_http_403 PASSED
-tests/test_pipeline.py::test_pydantic_v2_validation_and_idempotent_duckdb_upsert PASSED
-tests/test_pipeline.py::test_corrupt_schema_quarantined_to_dlq_and_replayed PASSED
-tests/test_pipeline.py::test_token_pruning_layer_reduces_payload_size PASSED
-tests/test_pipeline.py::test_fastapi_operational_router_endpoints PASSED
-============================== 7 passed in 2.06s ==============================
+tests/test_pipeline.py::test_extract_shopify_json_fast_path PASSED       [ 14%]
+tests/test_pipeline.py::test_extract_schema_json_ld_html_fallback PASSED [ 28%]
+tests/test_pipeline.py::test_ingestion_escalates_to_playwright_on_http_403 PASSED [ 42%]
+tests/test_pipeline.py::test_pydantic_v2_validation_and_idempotent_duckdb_upsert PASSED [ 57%]
+tests/test_pipeline.py::test_corrupt_schema_quarantined_to_dlq_and_replayed PASSED [ 71%]
+tests/test_pipeline.py::test_token_pruning_layer_reduces_payload_size PASSED [ 85%]
+tests/test_pipeline.py::test_fastapi_operational_router_endpoints PASSED [100%]
+============================== 7 passed in 1.74s ==============================
 ```
 
 ---
