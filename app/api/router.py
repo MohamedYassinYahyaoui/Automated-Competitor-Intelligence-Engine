@@ -1,17 +1,37 @@
 import json
+import logging
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Dict, List
 import duckdb
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 from app.core.config import settings
 from app.db.connection import init_db
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1", tags=["Competitor Intelligence Engine"])
 
 
-def get_db_connection():
-    """Returns a DuckDB connection instance using configured path."""
-    init_db(settings.DB_PATH)
-    return duckdb.connect(settings.DB_PATH, read_only=True)
+def get_db_connection(max_retries: int = 4, retry_delay: float = 0.05) -> duckdb.DuckDBPyConnection:
+    """Returns a DuckDB connection instance using configured path in read-only mode,
+    with exponential retry to gracefully handle concurrent write transactions.
+    """
+    db_path = settings.DB_PATH
+    if not Path(db_path).exists():
+        init_db(db_path)
+
+    for attempt in range(max_retries):
+        try:
+            return duckdb.connect(db_path, read_only=True)
+        except (duckdb.IOException, duckdb.Error) as e:
+            if attempt == max_retries - 1:
+                logger.error(
+                    f"Failed to acquire read connection on '{db_path}' after {max_retries} attempts: {e}"
+                )
+                raise
+            time.sleep(retry_delay * (2 ** attempt))
 
 
 @router.get("/health")
@@ -141,9 +161,20 @@ def get_dead_letter_queue(
         )
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initializes DuckDB tables once on server startup rather than on per-request hot paths."""
+    try:
+        init_db(settings.DB_PATH)
+    except Exception as e:
+        logger.warning(f"Could not initialize DuckDB at startup: {e}")
+    yield
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="Operational OLAP & DLQ inspection API for the Automated Competitor Intelligence Engine.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 app.include_router(router)
