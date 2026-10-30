@@ -160,12 +160,16 @@ def prune_catalog_for_llm(
         )
 
     pruned_chars = len(json.dumps(pruned_catalogs, indent=2))
-    baseline_chars = raw_bytes_total if raw_bytes_total > pruned_chars else int(pruned_chars * 2.65)
-    reduction_pct = ((baseline_chars - pruned_chars) / baseline_chars) * 100.0 if baseline_chars > 0 else 0.0
-    logger.info(
-        f"Token-Pruning Layer: Compressed payload context from {baseline_chars:,} chars "
-        f"to {pruned_chars:,} chars ({reduction_pct:.1f}% token reduction)."
-    )
+    if raw_bytes_total > 0:
+        reduction_pct = (raw_bytes_total - pruned_chars) / raw_bytes_total * 100.0
+        logger.info(
+            f"Token-Pruning Layer: Compressed payload context from {raw_bytes_total:,} chars "
+            f"to {pruned_chars:,} chars ({reduction_pct:.1f}% reduction)."
+        )
+    else:
+        logger.info(
+            f"Token-Pruning Layer: Pruned payload is {pruned_chars:,} chars (raw size not measured)."
+        )
 
     return pruned_catalogs
 

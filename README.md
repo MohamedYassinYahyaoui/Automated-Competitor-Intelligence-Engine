@@ -47,7 +47,7 @@ flowchart TD
     end
 
     subgraph Synthesis["Context Pruning & Executive LLM Synthesis"]
-        Pruner["Token-Pruning Layer (transform.py)<br/>Strips Raw HTML, Image Arrays & Variant Bloat<br/>(~63% Token Reduction)"]
+        Pruner["Token-Pruning Layer (transform.py)<br/>Strips Raw HTML, Image Arrays & Variant Bloat<br/>(~92% Size Reduction)"]
         Gemini["Google Gemini 2.5 Flash API<br/>client.aio.models.generate_content()<br/>(temp=0.2, Deterministic OLAP Fallback)"]
         Report["Executive Market Intelligence Brief<br/>+ DuckDB SQL Pricing Summary"]
         Pruner --> Gemini --> Report
@@ -76,7 +76,7 @@ flowchart TD
 4. **Dead-Letter Queue Quarantine & Replay CLI (`scripts/replay_dlq.py`):**
    - Schema-violating records and transport errors are isolated in `dead_letter_queue` without halting healthy targets. `scripts/replay_dlq.py` inspects unhandled DLQ rows, remediates recoverable schema anomalies, promotes fixed records into `products`, and purges dead 404s.
 5. **Token-Pruning Transformation Layer (`app/services/transform.py`):**
-   - Strips raw `body_html`, redundant image arrays, and per-SKU variant metadata before invoking `gemini-2.5-flash`, shrinking prompt payloads by **~63%** (`36,420 chars` -> `13,415 chars`) and preventing LLM needle-in-a-haystack degradation.
+   - Strips raw `body_html`, redundant image arrays, and per-SKU variant metadata before invoking `gemini-2.5-flash`, shrinking prompt payloads by **~92%** (`~184,000 chars` -> `~13,600 chars` on the live 3-brand run; exact values vary with catalog contents) and preventing LLM needle-in-a-haystack degradation.
 
 ---
 
@@ -103,70 +103,67 @@ docker compose up --build
 
 ### 1. Ingestion Benchmark: Concurrent `asyncio.gather` + `curl_cffi` vs. Headless Browser
 
-By pairing `asyncio.gather` concurrency with `curl_cffi` TLS impersonation on Tier 1 and reserving headless Chromium strictly for `HTTP 403` challenges, the pipeline achieves **6.8x faster ingestion** and **11x lower memory usage** compared to browser-only scrapers:
+Measured with [`scripts/benchmark_ingestion.py`](scripts/benchmark_ingestion.py): 3 live Shopify targets, 5 runs per mode, median reported. Peak RSS includes the Python process **and** all Chromium child processes (sampled every 50 ms). Raw results: [`benchmarks/ingestion.json`](benchmarks/ingestion.json).
 
-| Ingestion Mode | Concurrency Model | Elapsed Time (3 Brands) | Peak RAM Footprint | Anti-Bot Bypass Rate |
-| :--- | :--- | :--- | :--- | :--- |
-| **Sequential Playwright Only** | Sequential (`for` loop, 3 Browser Contexts) | `9.84 seconds` | `~640 MB` | High (Heavy CPU/RAM cost) |
-| **Sequential `curl_cffi`** | Sequential (`for` loop, TLS Impersonation) | `3.12 seconds` | `~48 MB` | Fails on hard JS challenges |
-| **Ours (`asyncio.gather` + 2-Tier Hybrid)** | **Concurrent (`curl_cffi` + 403 Playwright Escalation)** | **`1.42 seconds`** | **`~56 MB` (Fast Path)** | **100% (Tier-2 Fallback)** |
+| Ingestion Mode | Median Wall Time (3 brands) | Peak RSS Delta | vs. Playwright |
+| :--- | :--- | :--- | :--- |
+| **Sequential Playwright** (headless Chromium per URL) | `6.36 s` | `~343 MB` | 1.0x |
+| **Sequential `curl_cffi`** (Chrome 120 TLS impersonation) | `0.94 s` | `~1 MB` | 6.8x faster |
+| **Concurrent `asyncio.gather` + 2-tier** (production path) | **`0.40 s`** | **`~2.5 MB`** | **15.8x faster** |
 
-#### Actual Pipeline Execution Log (`python main.py` / `docker compose up`)
+*Environment: Windows 11, Python 3.13, 16 logical cores, 16 GB RAM, residential connection in Tunisia (2026-10-30). Network latency dominates; expect different absolute numbers on other machines/networks.*
+
+> [!NOTE]
+> On these targets `curl_cffi` received `HTTP 200` every time, so the Tier-2 Playwright escalation was **not triggered** during the benchmark. The concurrent row measures the fast path; the escalation path costs roughly what the Playwright row shows, but only for the URLs that actually return `403`.
+
+#### Reproduce
+
+```powershell
+python scripts/benchmark_ingestion.py --runs 5
+```
+
+#### Actual Pipeline Run (`python main.py`, 2026-10-30)
 
 ```text
-2026-10-27 20:23:10,112 [INFO] orchestrator: Starting Automated Competitor Intelligence Engine — concurrent asyncio.gather across 3 targets...
-2026-10-27 20:23:10,115 [INFO] app.services.ingestion: Attempting ingestion on https://www.allbirds.com/products.json?limit=10 via curl_cffi...
-2026-10-27 20:23:10,116 [INFO] app.services.ingestion: Attempting ingestion on https://www.redbullshopus.com/products.json?limit=10 via curl_cffi...
-2026-10-27 20:23:10,117 [INFO] app.services.ingestion: Attempting ingestion on https://us.shop.gymshark.com/products.json?limit=10 via curl_cffi...
-2026-10-27 20:23:11,534 [INFO] orchestrator: Concurrent ingestion completed in 1.42s.
-2026-10-27 20:23:11,540 [INFO] app.services.extractor: Parsing via Fast Path (Shopify JSON format)...
-2026-10-27 20:23:11,542 [INFO] orchestrator: Successfully extracted 10 products from Allbirds
-2026-10-27 20:23:11,545 [INFO] orchestrator: Successfully extracted 10 products from Red Bull Shop
-2026-10-27 20:23:11,548 [INFO] orchestrator: Successfully extracted 10 products from Gymshark US
-2026-10-27 20:23:11,563 [INFO] app.services.transform: DuckDB analytical & DLQ schemas verified.
-2026-10-27 20:23:11,618 [INFO] app.services.transform: Successfully upserted 30 validated records into DuckDB (quarantined=0).
-2026-10-27 20:23:11,620 [INFO] app.services.transform: Token-Pruning Layer: Compressed payload context from 36,420 chars to 13,415 chars (63.2% token reduction).
-2026-10-27 20:23:11,645 [INFO] app.services.analyzer: Dispatching payload context (13415 chars) to model 'gemini-2.5-flash'...
-2026-10-27 20:23:25,412 [INFO] app.services.analyzer: Successfully generated competitive analysis brief.
+2026-10-30 14:10:53,068 [INFO] orchestrator: Concurrent ingestion completed in 0.49s.
+2026-10-30 14:10:53,910 [INFO] app.services.transform: Successfully upserted 30 validated records into DuckDB (quarantined=0).
+2026-10-30 14:10:53,927 [INFO] app.services.transform: Token-Pruning Layer: Compressed payload context from 184,185 chars to 13,635 chars (92.6% reduction).
+2026-10-30 14:11:16,355 [INFO] app.services.analyzer: Successfully generated competitive analysis brief via 'gemini-2.5-flash'.
 ```
 
 ---
 
-### 2. Token-Pruning & DuckDB OLAP Benchmark
+### 2. Token-Pruning Layer (`app/services/transform.py`)
 
-#### Context Pruning Efficiency (`app/services/transform.py`)
+The raw size is the JSON-serialized storefront payload exactly as fetched; the pruned size is the JSON payload sent to Gemini.
 
-| Metric | Unpruned Raw Storefront Payload | Pruned Feature Vector Payload | Improvement |
+| Metric | Raw Storefront Payload | Pruned Payload | Change |
 | :--- | :--- | :--- | :--- |
-| **Payload Size (Characters)** | `36,420 chars` | `13,415 chars` | **-63.2% size** |
-| **Estimated Input Tokens** | `~9,105 tokens` | `~3,354 tokens` | **-63.2% token cost** |
-| **Gemini 2.5 Flash Synthesis Latency** | `~38.5 seconds` | `~13.8 seconds` | **2.8x faster response** |
+| **Payload size (3 brands, 30 products)** | `184,185 chars` | `13,635 chars` | **-92.6%** |
 
-#### Actual DuckDB OLAP Analytical Output (`analytics.duckdb`)
+*Measured in characters, not model tokens. Values vary slightly between runs as live catalogs change.*
+
+#### DuckDB OLAP Analytical Output (`analytics.duckdb`)
 
 ```text
 === DUCKDB OLAP ANALYTICAL SUMMARY (analytics.duckdb) ===
 Target Brand       | Products |   Avg ($) |   Min ($) |   Max ($) | Avg Variants |   OOS
 --------------------------------------------------------------------------------------
-Red Bull Shop      |       30 |     65.75 |     11.95 |    489.95 |          1.6 |     6
-Gymshark US        |       29 |     41.45 |     20.00 |     60.00 |          5.4 |     4
-Allbirds           |       10 |    118.08 |      0.80 |    160.00 |         11.8 |     2
+Red Bull Shop      |       50 |     67.10 |      5.69 |    489.95 |          1.5 |     6
+Gymshark US        |       49 |     44.33 |     20.00 |     70.00 |          6.1 |     6
+Allbirds           |       20 |    105.54 |      0.80 |    160.00 |         12.1 |     2
 --------------------------------------------------------------------------------------
 ```
 
+*Product counts grow across runs because `ON CONFLICT(product_id) DO UPDATE` keeps every SKU ever seen.*
+
 ---
 
-### 3. Failure Mode 1: Cloudflare `HTTP 403` Block -> Automatic Playwright Stealth Escalation
+### 3. Failure Mode 1: Cloudflare `HTTP 403` Block -> Automatic Playwright Escalation
 
-* **What happens when a target enables Cloudflare Bot Fight Mode:** Standard HTTP clients (`requests`/`httpx`) are blocked via TLS JA3 fingerprinting, and even `curl_cffi` can hit an `HTTP 403` JavaScript challenge when storefront protection levels are raised.
-* **How the pipeline recovers automatically:** `fetch_target_payload()` in `app/services/ingestion.py` intercepts `response.status_code == 403` and escalates to `fetch_with_playwright()`, launching headless Chromium with realistic viewport and User-Agent headers, waiting for `networkidle`, and falling back to `extract_schema_json_ld()` if the response is HTML instead of JSON:
-
-```text
-2026-10-27 20:18:04,112 [INFO] app.services.ingestion: Attempting ingestion on https://us.shop.gymshark.com/collections/all via curl_cffi...
-2026-10-27 20:18:04,489 [WARNING] app.services.ingestion: HTTP 403 Anti-bot block detected on https://us.shop.gymshark.com/collections/all. Escalating to Playwright...
-2026-10-27 20:18:04,490 [INFO] app.services.ingestion: [PLAYWRIGHT ESCALATION] Launching stealth browser for target: https://us.shop.gymshark.com/collections/all
-2026-10-27 20:18:07,912 [INFO] app.services.extractor: Parsing via Fallback Path (HTML Schema.org microdata)...
-```
+* **What happens when a target enables Cloudflare Bot Fight Mode:** Standard HTTP clients (`requests`/`httpx`) can be blocked via TLS/JA3 fingerprinting, and even `curl_cffi` can hit an `HTTP 403` JavaScript challenge when protection levels are raised.
+* **How the pipeline recovers:** `fetch_target_payload()` in `app/services/ingestion.py` intercepts `response.status_code == 403` and calls `fetch_with_playwright()`, which launches headless Chromium with a realistic viewport and User-Agent, waits for `networkidle`, and returns JSON or raw HTML (parsed by `extract_schema_json_ld()`).
+* **How it is verified:** `tests/test_pipeline.py::test_ingestion_escalates_to_playwright_on_http_403` mocks a `403` from `curl_cffi` and asserts that the Playwright path is called and its payload returned. None of the three live demo targets currently return `403`, so this path is covered by the test rather than by a live log.
 
 ---
 

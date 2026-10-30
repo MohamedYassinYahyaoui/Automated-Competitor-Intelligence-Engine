@@ -1,0 +1,123 @@
+{
+  "generated_at": "2026-10-30T13:09:38+00:00",
+  "machine": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "python": "3.13.15",
+    "cpu_logical_cores": 16,
+    "ram_gb": 15.7
+  },
+  "targets": [
+    "https://www.allbirds.com/products.json?limit=10",
+    "https://www.redbullshopus.com/products.json?limit=10",
+    "https://us.shop.gymshark.com/products.json?limit=10"
+  ],
+  "runs_per_mode": 5,
+  "modes": {
+    "sequential_playwright": {
+      "runs": [
+        {
+          "seconds": 9.306,
+          "peak_rss_mb": 392.5,
+          "peak_rss_delta_mb": 347.8
+        },
+        {
+          "seconds": 5.947,
+          "peak_rss_mb": 392.3,
+          "peak_rss_delta_mb": 342.6
+        },
+        {
+          "seconds": 6.011,
+          "peak_rss_mb": 393.3,
+          "peak_rss_delta_mb": 342.4
+        },
+        {
+          "seconds": 6.647,
+          "peak_rss_mb": 394.9,
+          "peak_rss_delta_mb": 343.7
+        },
+        {
+          "seconds": 6.362,
+          "peak_rss_mb": 394.8,
+          "peak_rss_delta_mb": 343.1
+        }
+      ],
+      "summary": {
+        "median_seconds": 6.362,
+        "max_seconds": 9.306,
+        "median_peak_rss_delta_mb": 343.1,
+        "max_peak_rss_delta_mb": 347.8
+      }
+    },
+    "sequential_curl_cffi": {
+      "runs": [
+        {
+          "seconds": 0.941,
+          "peak_rss_mb": 53.0,
+          "peak_rss_delta_mb": 0.7
+        },
+        {
+          "seconds": 0.882,
+          "peak_rss_mb": 53.2,
+          "peak_rss_delta_mb": 0.9
+        },
+        {
+          "seconds": 0.959,
+          "peak_rss_mb": 53.2,
+          "peak_rss_delta_mb": 0.9
+        },
+        {
+          "seconds": 0.907,
+          "peak_rss_mb": 53.2,
+          "peak_rss_delta_mb": 0.8
+        },
+        {
+          "seconds": 0.97,
+          "peak_rss_mb": 53.2,
+          "peak_rss_delta_mb": 0.7
+        }
+      ],
+      "summary": {
+        "median_seconds": 0.941,
+        "max_seconds": 0.97,
+        "median_peak_rss_delta_mb": 0.8,
+        "max_peak_rss_delta_mb": 0.9
+      }
+    },
+    "concurrent_two_tier": {
+      "runs": [
+        {
+          "seconds": 0.324,
+          "peak_rss_mb": 55.0,
+          "peak_rss_delta_mb": 2.5
+        },
+        {
+          "seconds": 0.403,
+          "peak_rss_mb": 55.2,
+          "peak_rss_delta_mb": 2.5
+        },
+        {
+          "seconds": 0.294,
+          "peak_rss_mb": 55.5,
+          "peak_rss_delta_mb": 2.8
+        },
+        {
+          "seconds": 0.527,
+          "peak_rss_mb": 55.2,
+          "peak_rss_delta_mb": 2.5
+        },
+        {
+          "seconds": 0.424,
+          "peak_rss_mb": 55.9,
+          "peak_rss_delta_mb": 3.2
+        }
+      ],
+      "summary": {
+        "median_seconds": 0.403,
+        "max_seconds": 0.527,
+        "median_peak_rss_delta_mb": 2.5,
+        "max_peak_rss_delta_mb": 3.2
+      }
+    }
+  },
+  "speedup_vs_playwright": 15.8
+}
